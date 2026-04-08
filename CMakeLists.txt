@@ -5,6 +5,11 @@ project(sap_fs
     LANGUAGES C CXX
 )
 
+# Guard against being added more than once via nested submodules.
+if(TARGET sap::fs)
+    return()
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
