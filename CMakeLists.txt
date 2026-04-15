@@ -32,14 +32,12 @@ add_library(sap::fs ALIAS sap_fs)
 target_include_directories(sap_fs
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sap_core/include>
         $<INSTALL_INTERFACE:include>
-        $<INSTALL_INTERFACE:sap_core/include>
 )
 
 target_link_libraries(sap_fs
     PUBLIC
-        # sap::core
+        sap::core
 )
 
 target_compile_features(sap_fs PUBLIC cxx_std_20)
