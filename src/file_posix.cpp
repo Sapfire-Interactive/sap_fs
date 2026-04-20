@@ -27,11 +27,12 @@ namespace sap::fs {
         m_impl->m_fd = -1;
     }
 
-    File::File(File&& other) noexcept : m_impl(std::move(other.m_impl)), m_path(std::move(other.m_path)) {}
+    File::File(File&& other) noexcept : m_impl(std::move(other.m_impl)), m_path(std::move(other.m_path)) { other.m_impl = nullptr; }
 
     File& File::operator=(File&& other) noexcept {
         m_impl = std::move(other.m_impl);
         m_path = std::move(other.m_path);
+        other.m_impl = nullptr;
         return *this;
     }
 

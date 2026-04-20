@@ -21,10 +21,8 @@ namespace sap::fs {
 
     static stl::string win_error_string(DWORD err = GetLastError()) {
         LPWSTR buf = nullptr;
-        DWORD len = FormatMessageW(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr, err, 0, reinterpret_cast<LPWSTR>(&buf), 0, nullptr);
+        DWORD len = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                                   err, 0, reinterpret_cast<LPWSTR>(&buf), 0, nullptr);
         if (len == 0)
             return "error " + stl::to_string(err);
         stl::wstring ws(buf, len);
@@ -53,7 +51,7 @@ namespace sap::fs {
     // Safe to call concurrently on the same handle (kernel serialises).
     static stl::result<DWORD> overlapped_read(HANDLE handle, void* buf, DWORD count, u64 offset) {
         OVERLAPPED ov = {};
-        ov.Offset     = static_cast<DWORD>(offset & 0xFFFFFFFFu);
+        ov.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFu);
         ov.OffsetHigh = static_cast<DWORD>(offset >> 32);
         BOOL ok = ReadFile(handle, buf, count, nullptr, &ov);
         if (!ok) {
@@ -76,7 +74,7 @@ namespace sap::fs {
     // Synchronous positioned write via OVERLAPPED.
     static stl::result<DWORD> overlapped_write(HANDLE handle, const void* buf, DWORD count, u64 offset) {
         OVERLAPPED ov = {};
-        ov.Offset     = static_cast<DWORD>(offset & 0xFFFFFFFFu);
+        ov.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFu);
         ov.OffsetHigh = static_cast<DWORD>(offset >> 32);
         BOOL ok = WriteFile(handle, buf, count, nullptr, &ov);
         if (!ok) {
@@ -94,7 +92,7 @@ namespace sap::fs {
     // Only valid when the handle was opened with FILE_APPEND_DATA access.
     static stl::result<DWORD> overlapped_append(HANDLE handle, const void* buf, DWORD count) {
         OVERLAPPED ov = {};
-        ov.Offset     = MAXDWORD;
+        ov.Offset = MAXDWORD;
         ov.OffsetHigh = MAXDWORD;
         BOOL ok = WriteFile(handle, buf, count, nullptr, &ov);
         if (!ok) {
@@ -120,11 +118,12 @@ namespace sap::fs {
         m_impl->m_handle = INVALID_HANDLE_VALUE;
     }
 
-    File::File(File&& other) noexcept : m_impl(std::move(other.m_impl)), m_path(std::move(other.m_path)) {}
+    File::File(File&& other) noexcept : m_impl(std::move(other.m_impl)), m_path(std::move(other.m_path)) { other.m_impl = nullptr; }
 
     File& File::operator=(File&& other) noexcept {
         m_impl = std::move(other.m_impl);
         m_path = std::move(other.m_path);
+        other.m_impl = nullptr;
         return *this;
     }
 
@@ -171,9 +170,8 @@ namespace sap::fs {
         const DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
         const DWORD flags = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED;
 
-        HANDLE handle = CreateFileW(
-            maybe_longpath(absolute_path).c_str(),
-            desired_access, share, nullptr, creation_disposition, flags, nullptr);
+        HANDLE handle =
+            CreateFileW(maybe_longpath(absolute_path).c_str(), desired_access, share, nullptr, creation_disposition, flags, nullptr);
         if (handle == INVALID_HANDLE_VALUE)
             return stl::make_error<File>("open: {}", win_error_string());
 
@@ -197,9 +195,8 @@ namespace sap::fs {
         size_t remaining = m_impl->m_write_buf.size();
         while (remaining > 0) {
             DWORD chunk = static_cast<DWORD>(std::min(remaining, static_cast<size_t>(MAXDWORD)));
-            stl::result<DWORD> res = m_impl->m_append
-                ? overlapped_append(m_impl->m_handle, ptr, chunk)
-                : overlapped_write(m_impl->m_handle, ptr, chunk, m_impl->m_cursor);
+            stl::result<DWORD> res = m_impl->m_append ? overlapped_append(m_impl->m_handle, ptr, chunk)
+                                                      : overlapped_write(m_impl->m_handle, ptr, chunk, m_impl->m_cursor);
             if (!res)
                 return stl::make_error<>("File::flush: {}", res.error());
             if (!m_impl->m_append)
@@ -214,8 +211,7 @@ namespace sap::fs {
     stl::result<size_t> File::read(stl::span<stl::byte> out) {
         if (!m_impl)
             return stl::make_error<size_t>("File::read: impl is null");
-        auto res = overlapped_read(m_impl->m_handle, out.data(),
-                                   static_cast<DWORD>(out.size()), m_impl->m_cursor);
+        auto res = overlapped_read(m_impl->m_handle, out.data(), static_cast<DWORD>(out.size()), m_impl->m_cursor);
         if (!res)
             return stl::make_error<size_t>("File::read: {}", res.error());
         m_impl->m_cursor += res.value();
@@ -225,8 +221,7 @@ namespace sap::fs {
     stl::result<size_t> File::pread(stl::span<stl::byte> out, u64 offset) const {
         if (!m_impl)
             return stl::make_error<size_t>("File::pread: impl is null");
-        auto res = overlapped_read(m_impl->m_handle, out.data(),
-                                   static_cast<DWORD>(out.size()), offset);
+        auto res = overlapped_read(m_impl->m_handle, out.data(), static_cast<DWORD>(out.size()), offset);
         if (!res)
             return stl::make_error<size_t>("File::pread: {}", res.error());
         return static_cast<size_t>(res.value()); // cursor NOT updated
@@ -240,9 +235,8 @@ namespace sap::fs {
             size_t remaining = data.size();
             while (remaining > 0) {
                 DWORD chunk = static_cast<DWORD>(std::min(remaining, static_cast<size_t>(MAXDWORD)));
-                stl::result<DWORD> res = m_impl->m_append
-                    ? overlapped_append(m_impl->m_handle, ptr, chunk)
-                    : overlapped_write(m_impl->m_handle, ptr, chunk, m_impl->m_cursor);
+                stl::result<DWORD> res = m_impl->m_append ? overlapped_append(m_impl->m_handle, ptr, chunk)
+                                                          : overlapped_write(m_impl->m_handle, ptr, chunk, m_impl->m_cursor);
                 if (!res)
                     return stl::make_error<>("File::write: {}", res.error());
                 if (!m_impl->m_append)
@@ -256,8 +250,7 @@ namespace sap::fs {
         while (offset < data.size()) {
             size_t space = m_impl->m_write_buf_capacity - m_impl->m_write_buf.size();
             size_t chunk = std::min(space, data.size() - offset);
-            m_impl->m_write_buf.insert(m_impl->m_write_buf.end(),
-                                       data.data() + offset, data.data() + offset + chunk);
+            m_impl->m_write_buf.insert(m_impl->m_write_buf.end(), data.data() + offset, data.data() + offset + chunk);
             offset += chunk;
             if (m_impl->m_write_buf.size() == m_impl->m_write_buf_capacity) {
                 if (auto res = flush(); !res)
@@ -295,13 +288,14 @@ namespace sap::fs {
         case ESeekWhence::Current:
             m_impl->m_cursor = static_cast<u64>(static_cast<i64>(m_impl->m_cursor) + offset);
             break;
-        case ESeekWhence::End: {
-            LARGE_INTEGER sz = {};
-            if (!GetFileSizeEx(m_impl->m_handle, &sz))
-                return stl::make_error<>("File::seek: {}", win_error_string());
-            m_impl->m_cursor = static_cast<u64>(sz.QuadPart + offset);
-            break;
-        }
+        case ESeekWhence::End:
+            {
+                LARGE_INTEGER sz = {};
+                if (!GetFileSizeEx(m_impl->m_handle, &sz))
+                    return stl::make_error<>("File::seek: {}", win_error_string());
+                m_impl->m_cursor = static_cast<u64>(sz.QuadPart + offset);
+                break;
+            }
         }
         return stl::success;
     }
