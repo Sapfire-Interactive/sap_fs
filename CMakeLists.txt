@@ -22,6 +22,8 @@ set(SAP_FS_SOURCES
     src/fs.cpp
     $<$<PLATFORM_ID:Windows>:src/file_windows.cpp>
     $<$<PLATFORM_ID:Linux>:src/file_posix.cpp>
+    $<$<PLATFORM_ID:Windows>:src/mapped_file_windows.cpp>
+    $<$<PLATFORM_ID:Linux>:src/mapped_file_posix.cpp>
 )
 
 if(BUILD_SHARED_LIBS)

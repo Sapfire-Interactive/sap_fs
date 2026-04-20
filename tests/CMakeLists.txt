@@ -18,6 +18,7 @@ include(GoogleTest)
 
 add_executable(sap_fs_tests
     file_tests.cpp
+    mapped_file_tests.cpp
 )
 
 target_link_libraries(sap_fs_tests
