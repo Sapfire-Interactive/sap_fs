@@ -14,16 +14,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(SAP_FS_SHARED "Should build shared library instead" OFF)
+option(BUILD_SHARED_LIBS "Should build shared library instead" Off)
+option(BUILD_TESTS "Should build tests" On)
 option(SAP_FS_INSTALL "Should install" Off)
 
-if(SAP_FS_SHARED)
-add_library(sap_fs SHARED
+set(SAP_FS_SOURCES
     src/fs.cpp
+    $<$<PLATFORM_ID:Windows>:src/file_windows.cpp>
+    $<$<PLATFORM_ID:Linux>:src/file_posix.cpp>
+)
+
+if(BUILD_SHARED_LIBS)
+add_library(sap_fs SHARED
+    ${SAP_FS_SOURCES}
 )
 else()
 add_library(sap_fs STATIC
-    src/fs.cpp
+    ${SAP_FS_SOURCES}
 )
 endif()
 
@@ -34,6 +41,8 @@ target_include_directories(sap_fs
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
+
+add_subdirectory(sap_core)
 
 target_link_libraries(sap_fs
     PUBLIC
@@ -47,6 +56,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(sap_fs PRIVATE -Wall -Wextra -Wpedantic)
 elseif(MSVC)
     target_compile_options(sap_fs PRIVATE /W4)
+endif()
+
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 if(SAP_FS_INSTALL)
