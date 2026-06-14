@@ -1,5 +1,4 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "windows_util.h"
 
 #include "sap_fs/mapped_file.h"
 
@@ -14,6 +13,15 @@ namespace sap::fs {
         HANDLE m_mapping = nullptr;
         void* m_view = nullptr;
         u64 m_size = 0;
+
+        ~impl() {
+            if (m_view)
+                UnmapViewOfFile(m_view);
+            if (m_mapping)
+                CloseHandle(m_mapping);
+            if (m_file != INVALID_HANDLE_VALUE)
+                CloseHandle(m_file);
+        }
     };
 
     MappedFile::MappedFile(MappedFile&& other) noexcept : m_impl(std::move(other.m_impl)) { other.m_impl = nullptr; }
@@ -56,28 +64,19 @@ namespace sap::fs {
         return mf;
     }
 
-    MappedFile::~MappedFile() {
-        if (!m_impl)
-            return;
-        if (m_impl->m_view)
-            UnmapViewOfFile(m_impl->m_view);
-        if (m_impl->m_mapping)
-            CloseHandle(m_impl->m_mapping);
-        if (m_impl->m_file != INVALID_HANDLE_VALUE)
-            CloseHandle(m_impl->m_file);
-    }
+    MappedFile::~MappedFile() = default;
 
-    u64 MappedFile::size() const { m_impl ? m_impl->m_size : 0; }
+    u64 MappedFile::size() const { return m_impl ? m_impl->m_size : 0; }
 
     stl::span<const stl::byte> MappedFile::bytes() const {
-        if (!m_impl || !m_impl->m_addr)
+        if (!m_impl || !m_impl->m_view)
             return {};
-        return {static_cast<const stl::byte*>(m_impl->m_view, m_impl->m_size)};
+        return {static_cast<const stl::byte*>(m_impl->m_view), m_impl->m_size};
     }
 
     void MappedFile::advise_sequential() {}
 
-    void MappedFile::advise_dontneed(u64 offset, u64 length) {
+    void MappedFile::advise_dontneed(u64 /*offset*/, u64 /*length*/) {
         // TODO: can map to PrefetchVirtualMemory
     }
 } // namespace sap::fs

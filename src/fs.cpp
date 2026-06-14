@@ -128,7 +128,8 @@ namespace sap::fs {
             return stl::make_error<Timestamp>("Failed to get mtime: {}", ec.message());
         }
         // Convert to milliseconds since epoch
-        auto sctp = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::file_clock::to_sys(ftime));
+        auto sctp = std::chrono::time_point_cast<std::chrono::milliseconds>(
+            std::chrono::clock_cast<std::chrono::system_clock>(ftime));
         return sctp.time_since_epoch().count();
     }
 
@@ -139,7 +140,7 @@ namespace sap::fs {
         }
         // Convert from milliseconds to file_time
         auto sys_time = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(time));
-        auto file_time = std::chrono::file_clock::from_sys(sys_time);
+        auto file_time = std::chrono::clock_cast<std::chrono::file_clock>(sys_time);
         std::error_code ec;
         fs::last_write_time(path_result.value(), file_time, ec);
         if (ec) {

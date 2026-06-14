@@ -1,10 +1,10 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "windows_util.h"
 
 #include "sap_fs/file.h"
 
 #include <sap_core/stl/vector.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace sap::fs {
@@ -17,35 +17,10 @@ namespace sap::fs {
         // track it ourselves. pread() reads without updating this.
         u64 m_cursor = 0;
         bool m_append = false;
+
+        stl::result<> flush_buffer();
+        ~impl();
     };
-
-    static stl::string win_error_string(DWORD err = GetLastError()) {
-        LPWSTR buf = nullptr;
-        DWORD len = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                                   err, 0, reinterpret_cast<LPWSTR>(&buf), 0, nullptr);
-        if (len == 0)
-            return "error " + stl::to_string(err);
-        stl::wstring ws(buf, len);
-        LocalFree(buf);
-        while (!ws.empty() && (ws.back() == L'\n' || ws.back() == L'\r' || ws.back() == L' '))
-            ws.pop_back();
-        int sz = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        if (sz <= 1)
-            return "error " + stl::to_string(err);
-        stl::string s(static_cast<size_t>(sz - 1), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, s.data(), sz, nullptr, nullptr);
-        return s;
-    }
-
-    // Prepend \\?\ when the path exceeds MAX_PATH - 1 to enable long-path support.
-    // std::filesystem::path::c_str() returns wchar_t* on Windows but does NOT add
-    // this prefix automatically.
-    static std::filesystem::path maybe_longpath(const std::filesystem::path& p) {
-        const auto& native = p.native();
-        if (native.size() > 259 && !native.starts_with(L"\\\\?\\"))
-            return L"\\\\?\\" + native;
-        return p;
-    }
 
     // Synchronous positioned read via OVERLAPPED. Does NOT update the cursor.
     // Safe to call concurrently on the same handle (kernel serialises).
@@ -106,17 +81,37 @@ namespace sap::fs {
         return transferred;
     }
 
-    File::~File() {
-        if (!m_impl || m_impl->m_handle == INVALID_HANDLE_VALUE)
-            return;
-        if (!m_impl->m_write_buf.empty()) {
-            auto res = flush();
+    // Drains the write buffer to the OS; shared by flush() and ~impl.
+    stl::result<> File::impl::flush_buffer() {
+        if (m_write_buf.empty())
+            return stl::success;
+        auto* ptr = m_write_buf.data();
+        size_t remaining = m_write_buf.size();
+        while (remaining > 0) {
+            DWORD chunk = static_cast<DWORD>(std::min(remaining, static_cast<size_t>(MAXDWORD)));
+            stl::result<DWORD> res =
+                m_append ? overlapped_append(m_handle, ptr, chunk) : overlapped_write(m_handle, ptr, chunk, m_cursor);
             if (!res)
-                std::terminate(); // caller didn't call close() on a writable file
+                return stl::make_error<>("{}", res.error());
+            if (!m_append)
+                m_cursor += res.value();
+            ptr += res.value();
+            remaining -= res.value();
         }
-        CloseHandle(m_impl->m_handle);
-        m_impl->m_handle = INVALID_HANDLE_VALUE;
+        m_write_buf.clear();
+        return stl::success;
     }
+
+    File::impl::~impl() {
+        if (m_handle == INVALID_HANDLE_VALUE)
+            return;
+        if (!flush_buffer())
+            std::terminate(); // caller didn't call close() on a writable file
+        CloseHandle(m_handle);
+        m_handle = INVALID_HANDLE_VALUE;
+    }
+
+    File::~File() = default;
 
     File::File(File&& other) noexcept : m_impl(std::move(other.m_impl)), m_path(std::move(other.m_path)) { other.m_impl = nullptr; }
 
@@ -189,22 +184,8 @@ namespace sap::fs {
     stl::result<> File::flush() {
         if (!m_impl)
             return stl::make_error<>("File::flush: impl is null");
-        if (m_impl->m_write_buf.empty())
-            return stl::success;
-        auto* ptr = m_impl->m_write_buf.data();
-        size_t remaining = m_impl->m_write_buf.size();
-        while (remaining > 0) {
-            DWORD chunk = static_cast<DWORD>(std::min(remaining, static_cast<size_t>(MAXDWORD)));
-            stl::result<DWORD> res = m_impl->m_append ? overlapped_append(m_impl->m_handle, ptr, chunk)
-                                                      : overlapped_write(m_impl->m_handle, ptr, chunk, m_impl->m_cursor);
-            if (!res)
-                return stl::make_error<>("File::flush: {}", res.error());
-            if (!m_impl->m_append)
-                m_impl->m_cursor += res.value();
-            ptr += res.value();
-            remaining -= res.value();
-        }
-        m_impl->m_write_buf.clear();
+        if (auto res = m_impl->flush_buffer(); !res)
+            return stl::make_error<>("File::flush: {}", res.error());
         return stl::success;
     }
 
